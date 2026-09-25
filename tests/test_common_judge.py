@@ -134,6 +134,49 @@ class TestCommonJudgeComparison(unittest.TestCase):
         self.assertEqual(p2["direction"], "full_tie")
         self.assertFalse(p2["reversed"])
 
+    def test_full_direction_follows_final_rank_not_delta_tolerance(self):
+        # 最终总分 90、90−0.6e-9、90−1.2e-9：主榜锚定并列给出名次 1、1、3。
+        # A/B 名次相同 → 全量并列；A/C、B/C 分差虽分别为 1.2e-9 与 0.6e-9，
+        # 但名次已有先后，绝不能再按全量总分差落容差标为「全量并列」。
+        rows = [
+            ("A", "J1", "I1", 90.0),
+            ("B", "J1", "I1", 90.0 - 0.6e-9),
+            ("C", "J1", "I1", 90.0 - 1.2e-9),
+        ]
+        r = run(rows)
+        ab = pair_of(r, "A", "B")
+        ac = pair_of(r, "A", "C")
+        bc = pair_of(r, "B", "C")
+        self.assertEqual((ab["a_rank"], ab["b_rank"]), (1, 1))
+        self.assertEqual((ac["a_rank"], ac["b_rank"]), (1, 3))
+        self.assertEqual((bc["a_rank"], bc["b_rank"]), (1, 3))
+
+        # A/B 同名次：全量并列（即便 full_delta 非零），不构成反向。
+        self.assertEqual(ab["full_leader"], "tie")
+        self.assertEqual(ab["direction"], "full_tie")
+        self.assertFalse(ab["reversed"])
+
+        # A/C：全量 A 领先（名次 1 vs 3），可比差 1.2e-9 超出容差也为 A → 同向。
+        self.assertEqual(ac["full_leader"], "a")
+        self.assertEqual(ac["comparable_leader"], "a")
+        self.assertEqual(ac["direction"], "same")
+        self.assertFalse(ac["reversed"])
+
+        # B/C：分差 0.6e-9 落入容差，但名次 1 vs 3 有先后——
+        # full_leader 必须是 A（B），可比持平按非反向处理，不能是 full_tie/reversed。
+        self.assertLessEqual(abs(bc["full_delta"]), 1e-9)
+        self.assertEqual(bc["full_leader"], "a")
+        self.assertEqual(bc["comparable_leader"], "tie")
+        self.assertEqual(bc["direction"], "same")
+        self.assertFalse(bc["reversed"])
+
+        s = r["summary"]
+        self.assertEqual(s["pairs"], 3)
+        self.assertEqual(s["full_tie"], 1)
+        self.assertEqual(s["same_direction"], 2)
+        self.assertEqual(s["reversed"], 0)
+        self.assertEqual(r["direction_labels"]["full_tie"], "全量并列")
+
     def test_reversed_direction(self):
         # 全量总分 A 领先（18 vs 9），但共同评委口径下 B 领先（9 vs 8）→ 反向。
         rows = [

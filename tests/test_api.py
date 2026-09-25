@@ -536,8 +536,9 @@ class TestAPI(unittest.TestCase):
         self.assertTrue(ab["comparable"])
         i1 = next(it for it in ab["items"] if it["item"] == "I1")
         self.assertEqual(i1["common_judges"], ["J1", "J2"])
+        # 接口默认采用校准分：I1 上 A 的校准均分 7.0、B 的校准均分 5.0。
         self.assertAlmostEqual(i1["a_avg"], 7.0)
-        self.assertAlmostEqual(i1["b_avg"], 6.0)
+        self.assertAlmostEqual(i1["b_avg"], 5.0)
         i2 = next(it for it in ab["items"] if it["item"] == "I2")
         self.assertFalse(i2["comparable"])
         self.assertEqual(i2["reason"], "no_common_judge")

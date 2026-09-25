@@ -2006,8 +2006,8 @@ function renderCommonJudgePanel() {
       <span class="cj-no">不可比 ${s.incomparable}</span> 对
       <span class="cj-note">（因缺项目 ${s.incomparable_missing_item_pairs} 对、无共同评委 ${s.incomparable_no_common_pairs} 对，按主因可重复计数）</span>。
       可比对中：<b class="cj-a">A 领先 ${s.a_leads}</b>、<b class="cj-b">B 领先 ${s.b_leads}</b>、持平 ${s.ties}；
-      与全量最终总分方向对照：<b class="cj-reversed">反向 ${s.reversed}</b> 对、同向 ${s.same_direction} 对、全量总分并列 ${s.full_tie} 对。
-      <span class="cj-note">所有差值均为同一共同评委集合上的最终分均分差（A−B）；不可比项目不按零分。</span>
+      与全量最终名次方向对照：<b class="cj-reversed">反向 ${s.reversed}</b> 对、同向 ${s.same_direction} 对、全量并列 ${s.full_tie} 对。
+      <span class="cj-note">全量领先/并列以主榜最终名次为准；所有差值均为同一共同评委集合上的最终分均分差（A−B）；不可比项目不按零分。</span>
     </div>`;
 
   // 反向对置顶，其次可比对（按可比分差绝对值降序），最后不可比对；组内按全量名次。
@@ -2169,7 +2169,7 @@ function renderCommonJudgePanel() {
     </table></div>
     <p class="hint cj-foot" style="margin-bottom:0;">
       「全量最终分」为各项目全部参评评委均分再跨项目求和的现有最终总分；「可比总分」仅汇总逐项目<b>共同评委</b>均分。
-      两种口径方向相反的选手对标为<b class="cj-reversed">反向</b>并置顶；不可比选手对不按 0 分、不参与方向对照。
+      全量口径的领先、并列与反向以主榜<b>最终名次</b>为准（名次相同即全量并列、不构成反向；名次有先后时再与可比方向比较），不按全量总分差落入容差判定；两种口径方向相反的选手对标为<b class="cj-reversed">反向</b>并置顶；不可比选手对不按 0 分、不参与方向对照。
       点行首箭头展开可查看逐项目共同评委与每位评委的最终分明细。本面板只读，评分、裁决或校准范围变化后自动重算。
     </p>`;
 

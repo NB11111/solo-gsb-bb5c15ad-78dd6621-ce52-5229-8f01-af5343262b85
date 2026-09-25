@@ -19,8 +19,7 @@ client = TestClient(app)
 SID = "common-judge-session"
 URL = f"/api/sessions/{SID}/common-judge"
 
-# 全部评分最终分 == 原始分（单组校准不影响断言；A/B 的 I1 由 J1/J2 共同评，
-# I2 各自只有一名不同评委 → 无共同评委）。
+# A/B 的 I1 由 J1/J2 共同评，I2 各自只有一名不同评委 → 无共同评委。
 # A: I1={J1:8,J2:6}、I2={J1:10}；B: I1={J1:7,J2:5}、I2={J2:9}；
 # C: I1={J3:5}。
 CSV_BODY = (
@@ -40,6 +39,15 @@ class TestCommonJudgeAPI(unittest.TestCase):
             files={"file": ("c.csv", CSV_BODY.encode("utf-8-sig"), "text/csv")},
         )
         assert r.status_code == 200, r.text
+        # 接口默认采用校准分；为与原始分断言一致，对全部评分标记「保留原分」。
+        for blk in r.json()["contestants"]:
+            for ib in blk["items"]:
+                for row in ib["scores"]:
+                    dr = client.patch(
+                        f"/api/sessions/{SID}/scores/{row['id']}/decision",
+                        json={"use_raw": True, "reason": "保留原分"},
+                    )
+                    assert dr.status_code == 200, dr.text
 
     def test_01_basic_payload(self):
         r = client.get(URL)
@@ -84,12 +92,46 @@ class TestCommonJudgeAPI(unittest.TestCase):
         self.assertTrue(p["reversed"])
         self.assertEqual(data["summary"]["reversed"], 1)
 
+    def test_02b_full_direction_follows_final_rank(self):
+        # 最终总分 90、90−0.6e-9、90−1.2e-9 → 主榜名次 1、1、3。
+        # B/C 分差 0.6e-9 在容差内，但名次 1 vs 3 有先后，不得标为全量并列。
+        sid = "cj-rank-anchor"
+        client.delete(f"/api/sessions/{sid}")
+        csv_body = (
+            "选手,评委,项目,分数\n"
+            f"A,J1,I1,{90.0}\n"
+            f"B,J1,I1,{90.0 - 0.6e-9:.17g}\n"
+            f"C,J1,I1,{90.0 - 1.2e-9:.17g}\n"
+        )
+        r = client.post(
+            f"/api/sessions/{sid}/upload?scope=judge",
+            files={"file": ("rank.csv", csv_body.encode("utf-8-sig"), "text/csv")},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        data = client.get(f"/api/sessions/{sid}/common-judge").json()
+        pairs = {(p["a"], p["b"]): p for p in data["pairs"]}
+        ab, ac, bc = pairs[("A", "B")], pairs[("A", "C")], pairs[("B", "C")]
+        self.assertEqual((ab["a_rank"], ab["b_rank"]), (1, 1))
+        self.assertEqual((bc["a_rank"], bc["b_rank"]), (1, 3))
+        self.assertEqual(ab["direction"], "full_tie")
+        self.assertEqual(ab["full_leader"], "tie")
+        self.assertEqual(bc["full_leader"], "a")
+        self.assertLessEqual(abs(bc["full_delta"]), 1e-9)
+        self.assertEqual(bc["direction"], "same")
+        self.assertFalse(bc["reversed"])
+        self.assertEqual(ac["direction"], "same")
+        self.assertEqual(data["summary"]["full_tie"], 1)
+        self.assertEqual(data["summary"]["same_direction"], 2)
+        self.assertEqual(data["summary"]["reversed"], 0)
+        self.assertEqual(data["direction_labels"]["full_tie"], "全量并列")
+
     def test_03_readonly_does_not_mutate(self):
         before = client.get(f"/api/sessions/{SID}/analysis").json()
         client.get(URL)
         client.get(URL)
         after = client.get(f"/api/sessions/{SID}/analysis").json()
-        self.assertEqual(after["counts"]["decisions"], 0)
+        # 只读调用不改变裁决数（setUpClass 已对全部评分标记保留原分）。
+        self.assertEqual(after["counts"]["decisions"], before["counts"]["decisions"])
         self.assertEqual(
             [(b["contestant"], b["eff_total"]) for b in before["contestants"]],
             [(b["contestant"], b["eff_total"]) for b in after["contestants"]],
