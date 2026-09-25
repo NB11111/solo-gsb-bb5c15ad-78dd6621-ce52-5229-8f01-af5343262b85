@@ -123,7 +123,7 @@ class TestCommonJudgeComparison(unittest.TestCase):
         self.assertEqual(p["direction"], "same")
         self.assertFalse(p["reversed"])
         self.assertEqual(p["full_leader"], "a")
-        # 全量总分并列时方向为 full_tie。
+        # 最终名次并列（总分确实相等）时方向为 full_tie。
         rows = [
             ("A", "J1", "I1", 8.0), ("B", "J1", "I1", 7.0),
             ("A", "J1", "I2", 2.0), ("B", "J1", "I2", 3.0),
@@ -131,8 +131,59 @@ class TestCommonJudgeComparison(unittest.TestCase):
         r2 = run(rows)
         p2 = pair_of(r2, "A", "B")
         self.assertAlmostEqual(p2["full_delta"], 0.0)
+        self.assertEqual(p2["a_rank"], p2["b_rank"])
+        self.assertEqual(p2["full_leader"], "tie")
         self.assertEqual(p2["direction"], "full_tie")
         self.assertFalse(p2["reversed"])
+        self.assertEqual(r2["direction_labels"]["full_tie"], "最终名次并列")
+
+    def test_full_direction_follows_final_rank_not_score_gap(self):
+        # 主榜按组最高分锚定：90、90−0.6e−9 并列第 1，90−1.0001e−9 第 3 名。
+        # 第 2、3 人分差仅 ~0.4e−9（落在容差内），但名次有先后：
+        # 全量领先者必须按最终名次判定，不得改标为全量并列。
+        a_total = 90.0
+        b_total = 90.0 - 0.6e-9
+        c_total = 90.0 - 1.0001e-9
+        rows = [
+            ("A", "J1", "I1", a_total),
+            ("B", "J1", "I1", b_total),
+            ("C", "J1", "I1", c_total),
+        ]
+        r = run(rows)
+
+        pab = pair_of(r, "A", "B")
+        self.assertEqual(pab["a_rank"], 1)
+        self.assertEqual(pab["b_rank"], 1)
+        self.assertEqual(pab["full_leader"], "tie")
+        self.assertEqual(pab["direction"], "full_tie")
+        self.assertFalse(pab["reversed"])
+
+        pac = pair_of(r, "A", "C")
+        self.assertEqual(pac["a_rank"], 1)
+        self.assertEqual(pac["b_rank"], 3)
+        self.assertEqual(pac["full_leader"], "a")
+        self.assertEqual(pac["comparable_leader"], "a")
+        self.assertEqual(pac["direction"], "same")
+
+        pbc = pair_of(r, "B", "C")
+        self.assertEqual(pbc["a"], "B")
+        self.assertEqual(pbc["b"], "C")
+        self.assertEqual(pbc["a_rank"], 1)
+        self.assertEqual(pbc["b_rank"], 3)
+        # 分差仍在容差内：可比口径持平，但全量领先者按名次为 B（A 侧）。
+        self.assertLessEqual(abs(pbc["full_delta"]), 1e-9)
+        self.assertEqual(pbc["comparable_leader"], "tie")
+        self.assertEqual(pbc["full_leader"], "a")
+        self.assertEqual(pbc["direction"], "same")
+        self.assertFalse(pbc["reversed"])
+
+        s = r["summary"]
+        self.assertEqual(s["pairs"], 3)
+        self.assertEqual(s["full_tie"], 1)
+        self.assertEqual(s["same_direction"], 2)
+        self.assertEqual(s["reversed"], 0)
+        # A−B、B−C 两对的同评委分差都在容差内 → 可比口径持平 2 对。
+        self.assertEqual(s["ties"], 2)
 
     def test_reversed_direction(self):
         # 全量总分 A 领先（18 vs 9），但共同评委口径下 B 领先（9 vs 8）→ 反向。

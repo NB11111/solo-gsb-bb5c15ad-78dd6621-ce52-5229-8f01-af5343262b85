@@ -2006,8 +2006,8 @@ function renderCommonJudgePanel() {
       <span class="cj-no">不可比 ${s.incomparable}</span> 对
       <span class="cj-note">（因缺项目 ${s.incomparable_missing_item_pairs} 对、无共同评委 ${s.incomparable_no_common_pairs} 对，按主因可重复计数）</span>。
       可比对中：<b class="cj-a">A 领先 ${s.a_leads}</b>、<b class="cj-b">B 领先 ${s.b_leads}</b>、持平 ${s.ties}；
-      与全量最终总分方向对照：<b class="cj-reversed">反向 ${s.reversed}</b> 对、同向 ${s.same_direction} 对、全量总分并列 ${s.full_tie} 对。
-      <span class="cj-note">所有差值均为同一共同评委集合上的最终分均分差（A−B）；不可比项目不按零分。</span>
+      与最终名次方向对照：<b class="cj-reversed">反向 ${s.reversed}</b> 对、同向 ${s.same_direction} 对、最终名次并列 ${s.full_tie} 对。
+      <span class="cj-note">全量领先 / 并列一律以主榜最终名次为准；所有差值均为同一共同评委集合上的最终分均分差（A−B）；不可比项目不按零分。</span>
     </div>`;
 
   // 反向对置顶，其次可比对（按可比分差绝对值降序），最后不可比对；组内按全量名次。
@@ -2143,7 +2143,7 @@ function renderCommonJudgePanel() {
         <td class="cj-coverage">${coverage}${incNames ? `<div class="cj-inc-names">不可比：${incNames}</div>` : ""}</td>
         <td class="num">${fmt(pair.a_full_total)}</td>
         <td class="num">${fmt(pair.b_full_total)}</td>
-        <td class="num">${totalDeltaHtml(pair.full_delta)}<div class="cj-sub">${leadBadge(pair.full_leader, { a: pair.a, b: pair.b, tie: "并列" })}</div></td>
+        <td class="num">${totalDeltaHtml(pair.full_delta)}<div class="cj-sub">${leadBadge(pair.full_leader, { a: pair.a + "（名次靠前）", b: pair.b + "（名次靠前）", tie: "名次并列" })}</div></td>
         <td class="num">${compCell.a}<br>${compCell.b}</td>
         <td class="num">${compCell.d}<div class="cj-sub">${compCell.lead}</div></td>
         <td>${directionBadge(pair)}</td>
@@ -2169,7 +2169,8 @@ function renderCommonJudgePanel() {
     </table></div>
     <p class="hint cj-foot" style="margin-bottom:0;">
       「全量最终分」为各项目全部参评评委均分再跨项目求和的现有最终总分；「可比总分」仅汇总逐项目<b>共同评委</b>均分。
-      两种口径方向相反的选手对标为<b class="cj-reversed">反向</b>并置顶；不可比选手对不按 0 分、不参与方向对照。
+      全量领先者与并列<b>一律以主榜最终名次为准</b>（并列名次不构成反向；名次有先后时不再因分差落入容差改判并列），
+      名次方向与可比方向相反的选手对标为<b class="cj-reversed">反向</b>并置顶；可比口径持平时按非反向处理；不可比选手对不按 0 分、不参与方向对照。
       点行首箭头展开可查看逐项目共同评委与每位评委的最终分明细。本面板只读，评分、裁决或校准范围变化后自动重算。
     </p>`;
 

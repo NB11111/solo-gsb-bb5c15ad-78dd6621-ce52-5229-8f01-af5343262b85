@@ -84,6 +84,40 @@ class TestCommonJudgeAPI(unittest.TestCase):
         self.assertTrue(p["reversed"])
         self.assertEqual(data["summary"]["reversed"], 1)
 
+    def test_02b_full_direction_follows_final_rank(self):
+        # 主榜 1、1、3：第 2、3 人分差落在容差内也不得标为全量并列。
+        sid = "cj-rank-anchor"
+        client.delete(f"/api/sessions/{sid}")
+        csv_body = (
+            "选手,评委,项目,分数\n"
+            "A,J1,I1,90\n"
+            "B,J1,I1,89.9999999994\n"   # 90 − 0.6e-9 → 与 A 并列第 1
+            "C,J1,I1,89.9999999989999\n"  # 90 − 1.0001e-9 → 第 3 名
+        )
+        r = client.post(
+            f"/api/sessions/{sid}/upload?scope=judge",
+            files={"file": ("rank.csv", csv_body.encode("utf-8-sig"), "text/csv")},
+        )
+        self.assertEqual(r.status_code, 200, r.text)
+        data = client.get(f"/api/sessions/{sid}/common-judge").json()
+
+        ab = next(p for p in data["pairs"] if (p["a"], p["b"]) == ("A", "B"))
+        self.assertEqual((ab["a_rank"], ab["b_rank"]), (1, 1))
+        self.assertEqual(ab["full_leader"], "tie")
+        self.assertEqual(ab["direction"], "full_tie")
+
+        bc = next(p for p in data["pairs"] if (p["a"], p["b"]) == ("B", "C"))
+        self.assertEqual((bc["a_rank"], bc["b_rank"]), (1, 3))
+        self.assertLessEqual(abs(bc["full_delta"]), 1e-9)
+        self.assertEqual(bc["full_leader"], "a")
+        self.assertEqual(bc["direction"], "same")
+        self.assertFalse(bc["reversed"])
+
+        self.assertEqual(data["summary"]["full_tie"], 1)
+        self.assertEqual(data["summary"]["same_direction"], 2)
+        self.assertEqual(data["summary"]["reversed"], 0)
+        self.assertEqual(data["direction_labels"]["full_tie"], "最终名次并列")
+
     def test_03_readonly_does_not_mutate(self):
         before = client.get(f"/api/sessions/{SID}/analysis").json()
         client.get(URL)

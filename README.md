@@ -100,7 +100,7 @@ docker compose down -v       # 停止并删除数据卷（清空全部数据）
 18. **评委严宽差异诊断（只读，仅基于原始分）**：对每对评委，取两人**共同评过的「选手 × 项目」记录**（共评记录），计算原始分差（评委甲 − 评委乙）的**中位数**作为观测分差，并以**共评记录数为权重**，在评委关系图（节点 = 评委，边 = 有共评记录的评委对）上**逐连通分量**做加权最小二乘拟合，使各分量内评委相对偏移量的**均值为零**——偏移量只是分量内相对值（正 = 相对偏宽，负 = 相对偏严），**不跨分量比较**；没有任何共评边的评委标为**「不可估计」**。面板列出各评委**偏移量**与**共评覆盖量**（该评委参与的共评记录条数、共评评委数），以及每对评委的**观测分差、拟合分差与残差**（附加权残差平方和与最大绝对残差）。结果随上传、合并导入**实时刷新**，全程只读，**不受校准范围切换与逐项/批处理裁决影响**；另提供只读接口 `GET /api/sessions/{id}/judge-offsets` 单独获取。
 19. **同评委可比对照（只读）**：在当前校准范围与逐项裁决形成的**最终分**基础上，对**每一对选手逐项目只取双方共同评分的评委**——分别求**同一评委集合**上的最终分均分（共同评委均分），两个均分使用完全相同的评委集合，从而剔除「双方参评评委不同 / 评委严宽不同」带来的偏差；再把各可比项目的均分差（A−B）**逐项求和**为**可比总分差**并给出**可比领先者**（差在 1e-9 内视为持平）。
     - 某项目**一方没有评分（缺项目）**或双方在该项目**没有任何共同评委**时，该项目标为**不可比**：列出原因与评委覆盖，**绝不按 0 分**计入，也不参与差值汇总；**全部项目都不可比**的选手对整对标为**不可比**（同样不按 0 分、不参与方向对照）。
-    - 面板逐对列出**可比项目数、各项目共同评委覆盖（项目 × 共同评委数）、全量最终总分与方向、可比总分与可比领先者、两种口径的方向对照**；其中可比总分方向与现有**全量最终总分**方向**相反**的选手对标为 **⚠ 反向**并自动置顶（全量总分并列标为「全量总分并列」）。
+    - 面板逐对列出**可比项目数、各项目共同评委覆盖（项目 × 共同评委数）、全量最终总分与方向、可比总分与可比领先者、两种口径的方向对照**；**全量领先者 / 全量并列一律以当前分析结果的最终名次（`eff_rank`）为准**——最终名次相同即为并列（标为「最终名次并列」，并列不构成反向）；名次有先后时，即使两人总分差仍落在 1e-9 容差内（例如主榜按组最高分锚定给出 1、1、3 时的第 2、3 人），也按名次先后确定全量领先者，再与可比方向比较，方向相反的选手对标为 **⚠ 反向**并自动置顶，可比口径持平时按非反向（同向）处理。
     - 点开任一行可**展开计算明细**：每个可比项目列出全部共同评委分别给双方的最终分与逐评委分差、共同评委均分及该项目差值，并附注双方各自的全量评委覆盖（仅一方参评的评委明确标注不参与同评委均分）；不可比项目说明缺项目的一方或双方各自参评但无交集的评委名单。
     - 结果**完全只读**，每次请求都由当前数据实时重算，**不写入评分、裁决或会话**；上传/合并导入、逐项（或批处理）裁决或校准范围变化后前端自动标记并重算。只读接口为 `GET /api/sessions/{id}/common-judge`。
 
@@ -285,9 +285,9 @@ CALIB_DATA_DIR=$(mktemp -d) python -m pytest tests/ -q
 
 只读接口 `GET /api/sessions/{id}/common-judge`（会话不存在或没有评分返回 `404`），响应：
 
-- `scope` / `scope_label`、`tie_eps`（持平容差 1e-9）与四组中文标签：`status_labels`（可比/不可比）、`item_reason_labels`（一方缺该项目/无共同评委）、`direction_labels`（同向/反向/全量总分并列/不可比）、`leader_labels`（A 领先/B 领先/持平）；
+- `scope` / `scope_label`、`tie_eps`（逐项目可比持平容差 1e-9）与四组中文标签：`status_labels`（可比/不可比）、`item_reason_labels`（一方缺该项目/无共同评委）、`direction_labels`（同向/反向/最终名次并列/不可比）、`leader_labels`（A 领先/B 领先/持平）；
 - `summary`：`pairs`（选手对总数）、`comparable` / `incomparable`（可比 / 不可比对数）、`a_leads` / `b_leads` / `ties`（可比口径领先统计）、`reversed` / `same_direction` / `full_tie`（方向对照统计）、`comparable_item_total`（全部对的可比项目条数合计）、`incomparable_missing_item_pairs` / `incomparable_no_common_pairs`（整对不可比时按对统计的两类原因数，一对可同时计入两类）、`contestants` / `items`；
-- `pairs[]`（无序选手对，A 为全量名次更靠前者）：`a`/`b`、`a_rank`/`b_rank`、`comparable`、`status`（`comparable`/`incomparable`）、`a_full_total`/`b_full_total`/`full_delta`/`full_leader`（现有**全量最终总分**口径）、`comparable_items`/`incomparable_items`、`a_comparable_total`/`b_comparable_total`/`comparable_delta`/`comparable_leader`（**同评委可比**口径，不可比时均为 `null`）、`direction`（`same` 同向 / `reversed` 反向 / `full_tie` 全量总分并列 / `incomparable` 不可比）与 `reversed` 布尔标记；
+- `pairs[]`（无序选手对，A 为最终名次更靠前者）：`a`/`b`、`a_rank`/`b_rank`、`comparable`、`status`（`comparable`/`incomparable`）、`a_full_total`/`b_full_total`/`full_delta`（现有**全量最终总分**与分差，仅作展示）/`full_leader`（**以最终名次 `eff_rank` 为准**：名次靠前为 `a`/`b`，名次相同为 `tie`，不再按分差与容差另判）、`comparable_items`/`incomparable_items`、`a_comparable_total`/`b_comparable_total`/`comparable_delta`/`comparable_leader`（**同评委可比**口径，不可比时均为 `null`）、`direction`（`same` 同向 / `reversed` 反向 / `full_tie` 最终名次并列 / `incomparable` 不可比）与 `reversed` 布尔标记；
 - `pairs[].items[]`：逐项目给出 `comparable` 与不可比时的 `reason`（`missing_item` / `no_common_judge`）、`missing_side`（缺项目的一方，双方都缺为 `null` 且 `both_missing=true`）、`a_has_item`/`b_has_item`、`common_judges`/`common_count`；可比项目另给 `a_avg`/`b_avg`（**同一共同评委集合**上的最终分均分）、`delta`（A−B）、`leader`、`a_judges`/`b_judges`（双方在该项目的全部评委最终分明细，含非共同评委）与 `a_full_avg`/`b_full_avg`（全量项目均分，供展开明细对照）。
 
 所有差值均为**当前最终分**（应用逐项裁决后），随评分、裁决与校准范围变化实时重算；不可比项目与不可比选手对**绝不按 0 分处理**。

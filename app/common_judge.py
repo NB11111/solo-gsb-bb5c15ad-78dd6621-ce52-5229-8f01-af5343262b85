@@ -11,10 +11,18 @@
   **不可比**，既不按 0 分计入，也不参与差值汇总；全部项目都不可比时，
   整对选手列为**不可比**（同样不按 0 分）。
 
-结果同时给出基于现有**全量最终总分**的方向（A−B），并与可比总分差方向
-对照：两者均有明确方向且相反的选手对标为**反向**；并列、不可比等情况
-分别标注。整个计算只读，不触碰评分、裁决或会话；评分、裁决或校准范围
-变化后由调用方重新计算。
+结果同时给出全量方向并与可比方向对照，但**全量领先者 / 全量并列一律以当前
+分析结果的最终名次（``eff_rank``）为准，不再用总分差与容差另判一次**：主榜
+按组最高分锚定给出 1、1、3 时，名次有先后的两人即使分差仍落在容差内，也按
+名次先后确定全量领先者，避免被误标为全量并列。具体规则：
+
+- 双方最终名次相同（并列名次）时标为**全量并列**，并列不构成反向；
+- 名次有先后时，全量领先者为名次更靠前者，再与共同评委可比方向比较——
+  可比口径持平时按非反向（同向）处理，方向相反才标为**反向**；
+- 整对不可比时不参与方向对照。
+
+整个计算只读，不触碰评分、裁决或会话；评分、裁决或校准范围变化后由调用方
+重新计算。
 """
 from __future__ import annotations
 
@@ -29,10 +37,10 @@ PAIR_INCOMPARABLE = "incomparable"      # 全部项目都不可比（不按 0 �
 # 不可比原因（逐项目 / 整对）。
 REASON_MISSING_ITEM = "missing_item"    # 一方在该项目没有任何评分
 REASON_NO_COMMON_JUDGE = "no_common_judge"  # 双方都有该项目，但无共同评委
-# 全量总分方向 vs 同评委可比方向 的关系。
-DIR_SAME = "same"                       # 两方向一致
-DIR_REVERSED = "reversed"               # 两方向相反（重点标注）
-DIR_FULL_TIE = "full_tie"               # 全量最终总分并列（无方向可对照）
+# 全量方向（以最终名次为准） vs 同评委可比方向 的关系。
+DIR_SAME = "same"                       # 名次有先后且两方向一致（含可比持平）
+DIR_REVERSED = "reversed"               # 名次先后与可比方向相反（重点标注）
+DIR_FULL_TIE = "full_tie"               # 最终名次并列（无方向可对照）
 DIR_PAIR_INCOMPARABLE = "incomparable"  # 该选手对不可比（无同评委方向）
 # 逐项目可比领先者。
 LEAD_A = "a"
@@ -50,7 +58,7 @@ ITEM_REASON_LABELS = {
 DIRECTION_LABELS = {
     DIR_SAME: "同向",
     DIR_REVERSED: "反向",
-    DIR_FULL_TIE: "全量总分并列",
+    DIR_FULL_TIE: "最终名次并列",
     DIR_PAIR_INCOMPARABLE: "不可比",
 }
 LEADER_LABELS = {
@@ -68,16 +76,28 @@ def _leader(delta: float) -> str:
     return LEAD_TIE
 
 
-def _direction(full_delta: float, pair_comparable: bool, comp_delta: float | None) -> str:
+def _full_leader(rank_a: int, rank_b: int) -> str:
+    """全量领先者以当前分析结果的最终名次（eff_rank）为准。
+
+    并列名次（名次相同）即全量并列，与两人总分差是否仍落在容差内无关——
+    主榜的组最高分锚定已经决定了谁与谁并列，这里不再用总分差二次判定，
+    否则名次 1、1、3 中第 2、3 人会因分差在容差内被误标为全量并列。
+    """
+    if rank_a == rank_b:
+        return LEAD_TIE
+    return LEAD_A if rank_a < rank_b else LEAD_B
+
+
+def _direction(full_lead: str, pair_comparable: bool, comp_delta: float | None) -> str:
     if not pair_comparable:
         return DIR_PAIR_INCOMPARABLE
-    if abs(full_delta) <= TIE_EPS:
+    if full_lead == LEAD_TIE:
+        # 最终名次并列：并列不构成反向，也没有全量方向可对照。
         return DIR_FULL_TIE
-    full_lead = _leader(full_delta)
     comp_lead = _leader(comp_delta if comp_delta is not None else 0.0)
     if comp_lead == LEAD_TIE:
-        # 可比总分差持平：全量方向在同评委口径下没有反向，按非反向处理。
-        return DIR_SAME if full_lead != LEAD_TIE else DIR_FULL_TIE
+        # 可比总分差持平：名次方向在同评委口径下没有反向，按非反向处理。
+        return DIR_SAME
     return DIR_SAME if full_lead == comp_lead else DIR_REVERSED
 
 
@@ -86,6 +106,8 @@ def common_judge_comparison(analysis: Mapping[str, Any]) -> dict[str, Any]:
 
     只使用 ``analysis`` 中的 ``items``、各选手的 ``eff_total`` / ``eff_rank``
     与逐项目 ``eff_avg`` 及逐条评分的 ``judge`` / ``effective``（最终分）。
+    全量领先者 / 全量并列以 ``eff_rank`` 为准（``contestants`` 已按最终名次
+    排序），``eff_total`` 仅用于展示分差，不参与方向判定。
     """
     contestants = list(analysis["contestants"])  # 已按最终名次排序
     items = list(analysis["items"])
@@ -238,6 +260,7 @@ def common_judge_comparison(analysis: Mapping[str, Any]) -> dict[str, Any]:
 
             is_comparable = comparable_items > 0
             full_delta = full_total[name_a] - full_total[name_b]
+            full_lead = _full_leader(eff_rank[name_a], eff_rank[name_b])
             if is_comparable:
                 comp_a_total = sum(
                     r["a_avg"] for r in rows if r["comparable"]
@@ -247,7 +270,7 @@ def common_judge_comparison(analysis: Mapping[str, Any]) -> dict[str, Any]:
                 )
                 comp_delta = comp_a_total - comp_b_total
                 comp_leader = _leader(comp_delta)
-                direction = _direction(full_delta, True, comp_delta)
+                direction = _direction(full_lead, True, comp_delta)
             else:
                 comp_a_total = comp_b_total = None
                 comp_delta = None
@@ -290,7 +313,8 @@ def common_judge_comparison(analysis: Mapping[str, Any]) -> dict[str, Any]:
                     "a_full_total": full_total[name_a],
                     "b_full_total": full_total[name_b],
                     "full_delta": full_delta,
-                    "full_leader": _leader(full_delta),
+                    # 以最终名次为准（而非总分差与容差），保证与主榜名次一致。
+                    "full_leader": full_lead,
                     "comparable_items": comparable_items,
                     "incomparable_items": len(items) - comparable_items,
                     "a_comparable_total": comp_a_total,
